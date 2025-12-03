@@ -1,5 +1,5 @@
 import warnings
-warnings.filterwarnings("ignore", category=UserWarning) #pandasku maunya sama sqlalchemy
+warnings.filterwarnings("ignore", category=UserWarning) #pandasny maunya sama sqlalchemy
 import psycopg2
 import pandas as pd
 from datetime import datetime
@@ -14,7 +14,7 @@ def connectDB():
     except Exception as e:
         print('koneksi gagal, silahkan perbaiki!', e)
         return None, None
-
+ 
 def get_connection():
     """Membuat koneksi ke database PostgreSQL"""
     result = connectDB()
@@ -24,8 +24,8 @@ def get_connection():
 
 def get_petani_id(username):
     """
-    Mendapatkan id_users untuk username.
-    Jika tidak ada, buat user baru dengan role 'petani'.
+    Mendapatkan id_users untuk username yang sudah terdaftar.
+    Jika username tidak ditemukan, mengembalikan None (tanpa membuat user otomatis).
     """
     conn = get_connection()
     if not conn:
@@ -34,24 +34,17 @@ def get_petani_id(username):
         cursor = conn.cursor()
         cursor.execute("SELECT id_users FROM users WHERE username = %s", (username,))
         res = cursor.fetchone()
+        
         if res:
             return res[0]
-        # user belum ada -> cari id_role untuk 'petani'
-        cursor.execute("SELECT id_role FROM role WHERE nama_role ILIKE %s", ('petani',))
-        role_row = cursor.fetchone()
-        id_role = role_row[0] if role_row else None
-
-        cursor.execute(
-            "INSERT INTO users (nama, no_kontak, email, username, password, id_alamat, id_role) VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING id_users",
-            ('', '', '', username, '', None, id_role)
-        )
-        new_id = cursor.fetchone()[0]
-        conn.commit()
-        return new_id
+        else:
+            return None 
+            
     except Exception as e:
         print(f"Error get petani ID: {e}")
         return None
     finally:
+        # Pastikan koneksi ditutup
         cursor.close()
         conn.close()
 
@@ -199,23 +192,40 @@ def buat_evaluasi_otomatis(id_pemeriksaan, tinggi, warna, lebar, tekstur, lembab
 # REGISTRASI & LOGIN
 # ==========================
 def register_manual():
-    username = input("Username: ").strip()
-    password = input("Password: ").strip()
-    print("\nPilih Jenis Pengguna:")
-    print("1. Petani")
-    print("2. Pabrik")
-    pilihan = input("Jenis (1/2): ").strip()
-    role_name = "petani" if pilihan == "1" else "pabrik" if pilihan == "2" else None
+  while True:
+    username = input("Username: ")
+    if not username.strip():
+        print("username tidak boleh kosong!")
+        continue
+    if not username.isalnum():
+        print("tidak boleh selain huruf dan angka!")
+        continue
+    print(f"username berhasil disimpan ✓: '{username}'")
+    break
+  
+  while True:
+    password = input("Password: ")
+    if not password.strip():
+        print("tidak boleh kosong!")
+        continue
+    print(f"password berhasil disimpan ✓")
+    break
+  
+  print("\nPilih Jenis Pengguna:")
+  print("1. Petani")
+  print("2. Pabrik")
+  pilihan = input("Jenis (1/2): ").strip()
+  role_name = "petani" if pilihan == "1" else "pabrik" if pilihan == "2" else None
 
-    if not role_name:
+  if not role_name:
         print("Pilihan tidak valid!")
         return
 
-    conn = get_connection()
-    if not conn:
+  conn = get_connection()
+  if not conn:
         return
 
-    try:
+  try:
         cur = conn.cursor()
         # cek username
         cur.execute("SELECT id_users FROM users WHERE username = %s", (username,))
@@ -233,30 +243,44 @@ def register_manual():
         # insert user minimal (sesuai tabel users)
         cur.execute(
             "INSERT INTO users (nama, no_kontak, email, username, password, id_alamat, id_role) VALUES (%s,%s,%s,%s,%s,%s,%s)",
-            ('', '', '', username, password, None, id_role)
+            ('', '', '', username, password, id_alamat, id_role)
         )
         conn.commit()
         print("Registrasi berhasil!")
-    except Exception as e:
+  except Exception as e:
         print(f"Error registrasi: {e}")
-    finally:
+  finally:
         cur.close()
         conn.close()
 
 def login():
-    username = input("Username: ").strip()
-    password = input("Password: ").strip()
-
-    if username == "admin" and password == "admin123":
-        print("Login sebagai Admin (menu belum dibuat)")
-        input("Tekan Enter untuk kembali...")
+   while True:
+    username = input("Username: ")
+    if not username.strip():
+        print("username tidak boleh kosong!")
+        continue
+    if not username.isalnum():
+        print("username hanya boleh angka dan huruf!")
+        continue
+    break 
+   
+   while True:
+    password = input("Password: ")
+    if not password.strip():
+        print("password tidak boleh kosong!")
+        continue
+    break
+   
+   if username == "admin" and password == "admin123":
+        print("Login sebagai Admin")
+        dashboard_admin()
         return
 
-    conn = get_connection()
-    if not conn:
+   conn = get_connection()
+   if not conn:
         return
 
-    try:
+   try:
         cur = conn.cursor()
         # ambil role name via join untuk memudahkan cek
         cur.execute("""
@@ -271,38 +295,97 @@ def login():
             print(f"Login berhasil sebagai {role_name}!")
             if role_name and role_name.lower() == "petani":
                 dashboard_petani(username)
+            elif role_name and role_name.lower() == "pabrik":
+                dashboard_pabrik(username)
             else:
                 input("Menu untuk role ini belum dibuat. Tekan Enter untuk kembali...")
         else:
             print("Username atau password salah!")
-    except Exception as e:
+   except Exception as e:
         print(f"Error login: {e}")
-    finally:
+   finally:
         cur.close()
         conn.close()
+
+def pilih_alamat():
+    conn = get_connection()
+    if not conn:
+        return None
+    cur = conn.cursor()
+
+    cur.execute("SELECT id_kabupaten, nama_kabupaten FROM kabupaten ORDER BY nama_kabupaten")
+    kab = cur.fetchall()
+    print("\nPilih Kabupaten:")
+    for k in kab:
+        print(f"{k[0]}. {k[1]}")
+    pilih_kab = input("ID Kabupaten: ")
+
+    cur.execute("SELECT id_kecamatan, nama_kecamatan FROM kecamatan WHERE id_kabupaten=%s ORDER BY nama_kecamatan",
+                (pilih_kab,))
+    kec = cur.fetchall()
+    print("\nPilih Kecamatan:")
+    for c in kec:
+        print(f"{c[0]}. {c[1]}")
+    pilih_kec = input("ID Kecamatan: ")
+
+    cur.execute("SELECT id_desa, nama_desa FROM desa WHERE id_kecamatan=%s ORDER BY nama_desa",
+                (pilih_kec,))
+    des = cur.fetchall()
+    print("\nPilih Desa:")
+    for d in des:
+        print(f"{d[0]}. {d[1]}")
+    pilih_des = input("ID Desa: ")
+
+    nama_jalan = input("Nama Jalan: ")
+
+    cur.execute("INSERT INTO alamat (nama_jalan, id_desa) VALUES (%s,%s) RETURNING id_alamat",
+                (nama_jalan, pilih_des))
+    id_alamat = cur.fetchone()[0]
+    conn.commit()
+
+    cur.close()
+    conn.close()
+    return id_alamat
 
 # ==========================
 # FITUR PETANI (sesuaikan dg schema)
 # ==========================
 def input_data_petani(username):
     """
-    Update profil user di tabel users (nama, no_kontak, ...).
+    Update profil user di tabel users (nama, no_kontak, email ...).
     """
     conn = get_connection()
     if not conn:
         return
     try:
         cur = conn.cursor()
-        cur.execute("SELECT id_users, nama, no_kontak FROM users WHERE username = %s", (username,))
+        cur.execute("SELECT id_users, nama, no_kontak, email FROM users WHERE username = %s", (username,))
         row = cur.fetchone()
         if not row:
             print("User tidak ditemukan.")
             cur.close(); conn.close(); return
         id_user = row[0]
         print("\n--- Update Profil ---")
-        nama = input(f"Nama ({row[1] or ''}): ") or row[1]
-        telp = input(f"No Telepon ({row[2] or ''}): ") or row[2]
-        cur.execute("UPDATE users SET nama=%s, no_kontak=%s WHERE id_users=%s", (nama, telp, id_user))
+        while True:
+            nama = input(f"Nama ({row[1] or ''}): ") or row[1]
+            if not nama.isalpha():
+                print("nama tidak boleh selain huruf!")
+            if not nama.strip():
+                print("nama tidak boleh kosong!")
+            break
+        while True:
+            telp = input(f"No Telepon ({row[2] or ''}): ") or row[2]
+            if not telp.isdigit():
+                print("no telp tidak boleh selain angka!")
+            if not telp.strip():
+                print("no telp tidak boleh kosong!")
+            break
+        while True:
+            email = input(f"Email({row[3] or ''}):") or row[3]
+            if not email.strip():
+                print("email tidak boleh kosong!")
+            break
+        cur.execute("UPDATE users SET nama=%s, no_kontak=%s, email=%s WHERE id_users=%s", (nama, telp, email, id_user))
         conn.commit()
         print("Profil berhasil diperbarui!")
     except Exception as e:
@@ -311,7 +394,12 @@ def input_data_petani(username):
         cur.close(); conn.close()
 
 def input_data_lahan(id_petani):
-    lokasi = input("Lokasi Lahan: ")
+
+    id_alamat = pilih_alamat()        # << TAMBAHKAN INI
+    if not id_alamat:
+        print("Gagal menyimpan alamat!")
+        return
+
     luas = input("Luas Lahan (M²): ")
     print("\nPilihan Jenis Tanah:")
     print("1. Tanah Aluvial")
@@ -330,8 +418,9 @@ def input_data_lahan(id_petani):
     try:
         cur = conn.cursor()
         cur.execute(
-            "INSERT INTO lahan (luas_lahan, ketinggian_lahan, jenis_tanah, id_users, id_alamat) VALUES (%s,%s,%s,%s,%s) RETURNING id_lahan",
-            (float(luas), 0.0, jenis, id_petani, None)
+            "INSERT INTO lahan (luas_lahan, ketinggian_lahan, jenis_tanah, id_users, id_alamat) "
+            "VALUES (%s,%s,%s,%s,%s) RETURNING id_lahan",
+            (float(luas), 0.0, jenis, id_petani, id_alamat)
         )
         id_lahan = cur.fetchone()[0]
         conn.commit()
@@ -340,6 +429,7 @@ def input_data_lahan(id_petani):
         print(f"Error simpan lahan: {e}")
     finally:
         cur.close(); conn.close()
+
 
 def input_data_pertumbuhan(id_petani):
     lahan_ids = get_petani_lahan_ids(id_petani)
@@ -366,12 +456,35 @@ def input_data_pertumbuhan(id_petani):
         return
 
     tanggal = input(f"Tanggal (Enter = {datetime.now().strftime('%Y-%m-%d')}): ") or datetime.now().strftime("%Y-%m-%d")
-    tinggi = input("Tinggi (cm): ")
+
+    # validasi angka
+    while True:
+        tinggi = input("Tinggi (cm): ")
+        if tinggi.replace(".", "", 1).isdigit():
+            break
+        print("❌ Tinggi harus angka!")
+
     warna = input("Warna Daun: ")
-    lebar = input("Lebar Daun (cm): ")
+
+    while True:
+        lebar = input("Lebar Daun (cm): ")
+        if lebar.replace(".", "", 1).isdigit():
+            break
+        print("❌ Lebar harus angka!")
+
     tekstur = input("Tekstur Daun: ")
-    lembab = input("Kelembapan (%): ")
-    kadar = input("Kadar Air (%): ")
+
+    while True:
+        lembab = input("Kelembapan (%): ")
+        if lembab.replace(".", "", 1).isdigit():
+            break
+        print("❌ Kelembapan harus angka!")
+
+    while True:
+        kadar = input("Kadar Air (%): ")
+        if kadar.replace(".", "", 1).isdigit():
+            break
+        print("❌ Kadar air harus angka!")
 
     try:
         cur = conn.cursor()
@@ -382,7 +495,7 @@ def input_data_pertumbuhan(id_petani):
         )
         id_pemeriksaan = cur.fetchone()[0]
         conn.commit()
-        print("Data pemeriksaan tersimpan!")
+        print("✔ Data pemeriksaan tersimpan!")
         buat_evaluasi_otomatis(id_pemeriksaan, tinggi, warna, lebar, tekstur, lembab, kadar)
     except Exception as e:
         print(f"Error simpan pemeriksaan: {e}")
@@ -412,6 +525,7 @@ def edit_data_pertumbuhan(id_petani):
             return
         for _, row in df.iterrows():
             print(f"ID: {row['id_pemeriksaan']} | Lahan: {row['id_lahan']} | Tgl: {row['tanggal_pemeriksaan']} | Tinggi: {row['tinggi_tembakau']} | Warna: {row['warna_daun']}")
+
         id_edit = input("\nMasukkan ID Pemeriksaan yang ingin diedit: ")
         cur = conn.cursor()
         cur.execute("SELECT id_lahan FROM pemeriksaan WHERE id_pemeriksaan = %s", (id_edit,))
@@ -419,27 +533,52 @@ def edit_data_pertumbuhan(id_petani):
         if not cek or cek[0] not in lahan_ids:
             print("ID tidak valid atau bukan milik Anda!")
             cur.close(); conn.close(); return
+
+        # ambil data lama
         cur.execute("""SELECT tanggal_pemeriksaan, tinggi_tembakau, warna_daun, lebar_daun, tekstur_daun, kadar_air
                        FROM pemeriksaan WHERE id_pemeriksaan = %s""", (id_edit,))
         old = cur.fetchone()
+
         print("\n--- Masukkan data baru (Enter untuk tetap pakai data lama) ---")
         tanggal = input(f"Tanggal ({old[0]}): ") or old[0]
-        tinggi = input(f"Tinggi ({old[1]}): ") or old[1]
+
+        # validasi angka untuk tinggi
+        while True:
+            tinggi = input(f"Tinggi ({old[1]}): ") or old[1]
+            if str(tinggi).replace(".", "", 1).isdigit():
+                break
+            print("❌ Tinggi harus angka!")
+
         warna = input(f"Warna Daun ({old[2]}): ") or old[2]
-        lebar = input(f"Lebar Daun ({old[3]}): ") or old[3]
+
+        # validasi angka untuk lebar
+        while True:
+            lebar = input(f"Lebar Daun ({old[3]}): ") or old[3]
+            if str(lebar).replace(".", "", 1).isdigit():
+                break
+            print("❌ Lebar harus angka!")
+
         tekstur = input(f"Tekstur Daun ({old[4]}): ") or old[4]
-        kadar = input(f"Kadar Air ({old[5]}): ") or old[5]
+
+        # validasi angka untuk kadar air
+        while True:
+            kadar = input(f"Kadar Air ({old[5]}): ") or old[5]
+            if str(kadar).replace(".", "", 1).isdigit():
+                break
+            print("❌ Kadar air harus angka!")
+
+        # update pemeriksaan
         cur.execute(
             """UPDATE pemeriksaan SET tanggal_pemeriksaan=%s, tinggi_tembakau=%s, warna_daun=%s,
                lebar_daun=%s, tekstur_daun=%s, kadar_air=%s WHERE id_pemeriksaan=%s""",
             (tanggal, float(tinggi), warna, float(lebar), tekstur, float(kadar), id_edit)
         )
         conn.commit()
-        print("Data berhasil diperbarui!")
-        # hapus evaluasi lama & buat ulang
-        cur.execute("DELETE FROM evaluasi WHERE id_pemeriksaan = %s", (id_edit,))
-        conn.commit()
+        print("✔ Data pemeriksaan berhasil diperbarui!")
+
+        # update evaluasi lama (tidak delete, langsung update)
         buat_evaluasi_otomatis(id_edit, tinggi, warna, lebar, tekstur, None, kadar)
+
     except Exception as e:
         print(f"Error edit: {e}")
     finally:
@@ -469,24 +608,39 @@ def hapus_data_pertumbuhan(id_petani):
         if df.empty:
             print("Belum ada data pemeriksaan.")
             return
+
         print("\nDaftar Pemeriksaan:")
         for _, row in df.iterrows():
             print(f"ID: {row['id_pemeriksaan']} | Tanggal: {row['tanggal_pemeriksaan']} | Tinggi: {row['tinggi_tembakau']} cm | Warna: {row['warna_daun']} | Lahan: {row['id_lahan']}")
+
         id_hapus = input("\nMasukkan ID Pemeriksaan yang ingin dihapus: ")
         if int(id_hapus) not in df['id_pemeriksaan'].values:
             print("❌ ID tidak ditemukan atau bukan milik Anda!")
             return
+
         yakin = input(f"Yakin ingin menghapus ID {id_hapus}? (y/n): ")
         if yakin.lower() != "y":
             print("Dibatalkan.")
             return
+
         cur = conn.cursor()
-        # hapus evaluasi & hama terlebih dahulu
+
+        # cek apakah evaluasi pemeriksaan ini dipakai di pengajuan
+        cur.execute("""
+            SELECT COUNT(*) FROM pengajuan 
+            WHERE id_evaluasi IN (SELECT id_evaluasi FROM evaluasi WHERE id_pemeriksaan=%s)
+        """, (id_hapus,))
+        if cur.fetchone()[0] > 0:
+            print("❌ Data pemeriksaan tidak bisa dihapus karena evaluasi sudah dipakai di pengajuan!")
+            return
+
+        # kalau aman, hapus evaluasi & hama lalu pemeriksaan
         cur.execute("DELETE FROM evaluasi WHERE id_pemeriksaan = %s", (id_hapus,))
         cur.execute("DELETE FROM hama WHERE id_pemeriksaan = %s", (id_hapus,))
         cur.execute("DELETE FROM pemeriksaan WHERE id_pemeriksaan = %s", (id_hapus,))
         conn.commit()
         print("✔ Data pemeriksaan berhasil dihapus!")
+
     except Exception as e:
         print(f"Error: {e}")
     finally:
@@ -640,15 +794,28 @@ def pengajuan_penjualan(id_petani):
         df = pd.read_sql(query, conn, params=(id_petani,))
         for _, row in df.iterrows():
             print(f"{row['id_lahan']} - Luas: {row['luas_lahan']} m²")
+
         pilih = input("ID Lahan: ")
         if int(pilih) not in lahan_ids:
-            print("Lahan tidak valid!")
+            print("❌ Lahan tidak valid!")
             return
-        jumlah = input("Jumlah (kg): ")
-        harga = input("Harga per kg: ")
+
+        # validasi angka untuk jumlah
+        while True:
+            jumlah = input("Jumlah (kg): ")
+            if jumlah.replace(".", "", 1).isdigit():
+                break
+            print("❌ Jumlah harus angka!")
+
+        # validasi angka untuk harga
+        while True:
+            harga = input("Harga per kg: ")
+            if harga.replace(".", "", 1).isdigit():
+                break
+            print("❌ Harga harus angka!")
+
         cur = conn.cursor()
-        # perlu mapping ke evaluasi: user bisa mengajukan -> kita ambil evaluasi terbaru untuk pemeriksaan pada lahan tsb
-        # untuk kesederhanaan, cari evaluasi terbaru yang terkait lahan tersebut
+        # ambil evaluasi terbaru untuk lahan tsb
         cur.execute("""
             SELECT ev.id_evaluasi FROM evaluasi ev
             JOIN pemeriksaan p ON ev.id_pemeriksaan = p.id_pemeriksaan
@@ -657,12 +824,13 @@ def pengajuan_penjualan(id_petani):
         """, (pilih,))
         ev = cur.fetchone()
         id_evaluasi = ev[0] if ev else None
+
         cur.execute(
             "INSERT INTO pengajuan (tanggal_pengajuan, pengajuan_harga, id_status_pengajuan, id_evaluasi, id_users) VALUES (%s,%s,%s,%s,%s)",
             (datetime.now(), float(harga), None, id_evaluasi, id_petani)
         )
         conn.commit()
-        print("Pengajuan berhasil dikirim!")
+        print("✔ Pengajuan berhasil dikirim!")
     except Exception as e:
         print(f"Error: {e}")
     finally:
@@ -679,12 +847,23 @@ def lihat_transaksi_penjualan(id_petani):
         print("Tidak dapat menampilkan transaksi: koneksi DB bermasalah.")
         return
     try:
-        df = pd.read_sql("SELECT * FROM transaksi WHERE id_users = %s ORDER BY tanggal_transaksi DESC", conn, params=(id_petani,))
+        df = pd.read_sql(
+            "SELECT id_transaksi, tanggal_transaksi, jumlah_kg, harga_sepakat FROM transaksi WHERE id_users = %s ORDER BY tanggal_transaksi DESC",
+            conn, params=(id_petani,)
+        )
         if df.empty:
             print("Belum ada transaksi.")
         else:
             for _, r in df.iterrows():
-                print(f"ID: {r['id_transaksi']} | Tgl: {r['tanggal_transaksi']} | Jumlah: {r['jumlah_kg']} kg | Harga sepakat: {r['harga_sepakat']}")
+                # format tanggal lebih ringkas
+                tgl_fmt = r['tanggal_transaksi'].strftime("%d-%m-%Y %H:%M")
+                # format angka
+                jumlah_fmt = f"{float(r['jumlah_kg']):,.2f}".rstrip("0").rstrip(".")
+                harga_fmt = f"{float(r['harga_sepakat']):,.0f}"
+                total = float(r['jumlah_kg']) * float(r['harga_sepakat'])
+                total_fmt = f"{total:,.0f}"
+
+                print(f"ID: {r['id_transaksi']} | Tgl: {tgl_fmt} | Jumlah: {jumlah_fmt} kg | Harga: Rp {harga_fmt} | Total: Rp {total_fmt}")
     except Exception as e:
         print(f"Error: {e}")
     finally:
@@ -727,6 +906,229 @@ def dashboard_petani(username):
             break
         else:
             print("Pilihan tidak valid!")
+
+# ==========================
+# FITUR PABRIK
+# ==========================
+def lihat_pengajuan_pabrik(username):
+    conn = get_connection()
+    if not conn:
+        return
+    try:
+        df = pd.read_sql("""
+            SELECT pg.id_pengajuan, pg.tanggal_pengajuan, pg.pengajuan_harga, u.username, ev.skor_evaluasi, he.hasil_evaluasi
+            FROM pengajuan pg
+            LEFT JOIN users u ON pg.id_users = u.id_users
+            LEFT JOIN evaluasi ev ON pg.id_evaluasi = ev.id_evaluasi
+            LEFT JOIN hasil_evaluasi he ON ev.id_hasil_evaluasi = he.id_hasil_evaluasi
+            ORDER BY pg.tanggal_pengajuan DESC
+        """, conn)
+        if df.empty:
+            print("Belum ada pengajuan dari petani.")
+        else:
+            print("\n===== DAFTAR PENGAJUAN =====")
+            for _, r in df.iterrows():
+                harga_fmt = f"{float(r['pengajuan_harga']):,.0f}"
+                print(f"ID: {r['id_pengajuan']} | Petani: {r['username']} | Harga: Rp {harga_fmt} | Skor: {r['skor_evaluasi']} | Hasil: {r['hasil_evaluasi']}")
+    except Exception as e:
+        print("Error lihat pengajuan:", e)
+    finally:
+        conn.close()
+
+def putuskan_pengajuan(username):
+    conn = get_connection()
+    if not conn:
+        return
+    try:
+        id_pengajuan = input("Masukkan ID Pengajuan yang ingin diputuskan: ")
+        keputusan = input("Keputusan (setuju/tolak): ").lower()
+
+        cur = conn.cursor()
+        # sesuaikan dengan nama kolom di tabel status_pengajuan
+        cur.execute("SELECT id_status_pengajuan FROM status_pengajuan WHERE status_pengajuan ILIKE %s", (keputusan,))
+        status_row = cur.fetchone()
+        if not status_row:
+            print("❌ Status tidak valid! Harus 'setuju' atau 'tolak'.")
+            return
+        id_status = status_row[0]
+
+        cur.execute("UPDATE pengajuan SET id_status_pengajuan=%s WHERE id_pengajuan=%s", (id_status, id_pengajuan))
+        conn.commit()
+        print(f"✔ Pengajuan {id_pengajuan} berhasil di-{keputusan}.")
+    except Exception as e:
+        print("Error putuskan pengajuan:", e)
+    finally:
+        try:
+            cur.close()
+        except:
+            pass
+        conn.close()
+
+def transaksi_pembelian(username):
+    conn = get_connection()
+    if not conn:
+        return
+    try:
+        id_pengajuan = input("ID Pengajuan yang disetujui: ")
+
+        # validasi angka jumlah
+        while True:
+            jumlah = input("Jumlah (kg): ")
+            if jumlah.replace(".", "", 1).isdigit():
+                break
+            print("❌ Jumlah harus angka!")
+
+        # validasi angka harga
+        while True:
+            harga = input("Harga sepakat per kg: ")
+            if harga.replace(".", "", 1).isdigit():
+                break
+            print("❌ Harga harus angka!")
+
+        total = float(jumlah) * float(harga)
+
+        cur = conn.cursor()
+        # ambil id_users petani dari pengajuan
+        cur.execute("SELECT id_users FROM pengajuan WHERE id_pengajuan=%s", (id_pengajuan,))
+        petani_row = cur.fetchone()
+        id_petani = petani_row[0] if petani_row else None
+
+
+        # simpan transaksi dengan id_users petani
+        cur.execute("""
+            INSERT INTO transaksi (tanggal_transaksi, jumlah_kg, harga_sepakat, id_pengajuan, id_users)
+            VALUES (%s,%s,%s,%s,%s)
+        """, (datetime.now(), float(jumlah), float(harga), id_pengajuan, id_petani))
+        conn.commit()
+        print(f"✔ Transaksi pembelian tercatat untuk petani {id_petani}. Total: Rp {total:,.0f}")
+    except Exception as e:
+        print("Error transaksi:", e)
+    finally:
+        try:
+            cur.close()
+        except:
+            pass
+        conn.close()
+
+def riwayat_transaksi_pabrik(username):
+    conn = get_connection()
+    if not conn:
+        return
+    try:
+        df = pd.read_sql("SELECT id_transaksi, tanggal_transaksi, jumlah_kg, harga_sepakat FROM transaksi ORDER BY tanggal_transaksi DESC", conn)
+        if df.empty:
+            print("Belum ada transaksi.")
+        else:
+            print("\n===== RIWAYAT TRANSAKSI PABRIK =====")
+            for _, r in df.iterrows():
+                jumlah_fmt = f"{float(r['jumlah_kg']):,.2f}".rstrip("0").rstrip(".")
+                harga_fmt = f"{float(r['harga_sepakat']):,.0f}"
+                total = float(r['jumlah_kg']) * float(r['harga_sepakat'])
+                total_fmt = f"{total:,.0f}"
+                print(f"ID: {r['id_transaksi']} | Tgl: {r['tanggal_transaksi']} | Jumlah: {jumlah_fmt} kg | Harga: Rp {harga_fmt} | Total: Rp {total_fmt}")
+    except Exception as e:
+        print("Error riwayat transaksi:", e)
+    finally:
+        conn.close()
+
+# ==========================
+# DASHBOARD PABRIK
+# ==========================
+def dashboard_pabrik(username):
+    while True:
+        print(f"\n{'='*22} MENU PABRIK {'='*22}")
+        print("1. Lihat Pengajuan Penjualan")
+        print("2. Putuskan Pengajuan")
+        print("3. Transaksi Pembelian")
+        print("4. Riwayat Transaksi")
+        print("5. Logout")
+        p = input("\nPilih (1-5): ")
+        if p == "1": lihat_pengajuan_pabrik(username)
+        elif p == "2": putuskan_pengajuan(username)
+        elif p == "3": transaksi_pembelian(username)
+        elif p == "4": riwayat_transaksi_pabrik(username)
+        elif p == "5":
+            print("Logout berhasil dari menu Pabrik.")
+            break
+        else:
+            print("Pilihan tidak valid!")
+
+# ==========================
+# DASHBOARD ADMIN
+# ==========================
+def dashboard_admin():
+    while True:
+        print(f"\n{'='*22} MENU ADMIN {'='*22}")
+        print("1. Lihat Semua User")
+        print("2. Hapus User")
+        print("3. Lihat Semua Pengajuan")
+        print("4. Lihat Semua Transaksi")
+        print("5. Logout")
+        p = input("\nPilih (1-5): ")
+
+        if p == "1": lihat_semua_user()
+        elif p == "2": hapus_user()
+        elif p == "3": lihat_semua_pengajuan()
+        elif p == "4": lihat_semua_transaksi()
+        elif p == "5":
+            print("Logout berhasil dari menu Admin.")
+            break
+        else:
+            print("Pilihan tidak valid!")
+
+def lihat_semua_user():
+    conn = get_connection()
+    if not conn: return
+    try:
+        df = pd.read_sql("SELECT id_users, username, id_role FROM users ORDER BY id_users", conn)
+        print("\n===== DAFTAR USER =====")
+        for _, r in df.iterrows():
+            print(f"ID: {r['id_users']} | Username: {r['username']} | Role: {r['id_role']}")
+    except Exception as e:
+        print("Error lihat user:", e)
+    finally:
+        conn.close()
+
+def hapus_user():
+    conn = get_connection()
+    if not conn: return
+    try:
+        id_user = input("Masukkan ID User yang ingin dihapus: ")
+        cur = conn.cursor()
+        cur.execute("DELETE FROM users WHERE id_users=%s", (id_user,))
+        conn.commit()
+        print(f"✔ User {id_user} berhasil dihapus.")
+    except Exception as e:
+        print("Error hapus user:", e)
+    finally:
+        cur.close(); conn.close()
+
+def lihat_semua_pengajuan():
+    conn = get_connection()
+    if not conn: return
+    try:
+        df = pd.read_sql("SELECT * FROM pengajuan ORDER BY tanggal_pengajuan DESC", conn)
+        print("\n===== SEMUA PENGAJUAN =====")
+        for _, r in df.iterrows():
+            print(f"ID: {r['id_pengajuan']} | User: {r['id_users']} | Harga: Rp {r['pengajuan_harga']} | Status: {r['id_status_pengajuan']}")
+    except Exception as e:
+        print("Error lihat pengajuan:", e)
+    finally:
+        conn.close()
+
+def lihat_semua_transaksi():
+    conn = get_connection()
+    if not conn: return
+    try:
+        df = pd.read_sql("SELECT * FROM transaksi ORDER BY tanggal_transaksi DESC", conn)
+        print("\n===== SEMUA TRANSAKSI =====")
+        for _, r in df.iterrows():
+            total = float(r['jumlah_kg']) * float(r['harga_sepakat'])
+            print(f"ID: {r['id_transaksi']} | User: {r['id_users']} | Jumlah: {r['jumlah_kg']} kg | Harga: Rp {r['harga_sepakat']} | Total: Rp {total:,.0f}")
+    except Exception as e:
+        print("Error lihat transaksi:", e)
+    finally:
+        conn.close()
 
 # ==========================
 # MAIN
