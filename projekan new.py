@@ -242,8 +242,13 @@ def register_manual():
 
         # insert user minimal (sesuai tabel users)
         cur.execute(
+<<<<<<< HEAD
             "INSERT INTO users (nama, no_kontak, email, username, password, id_role) VALUES (%s,%s,%s,%s,%s,%s)",
             ('', '', '', username, password, id_role)
+=======
+            "INSERT INTO users (nama, no_kontak, email, username, password, id_alamat, id_role) VALUES (%s,%s,%s,%s,%s,%s,%s)",
+            ('', '', '', username, password, id_alamat, id_role)
+>>>>>>> 29e51159092fff404a9615ba503ff3b24abc474e
         )
         conn.commit()
         print("Registrasi berhasil!")
@@ -1091,6 +1096,7 @@ def lihat_semua_user():
 
 def hapus_user():
     conn = get_connection()
+<<<<<<< HEAD
     if not conn:
         return
     
@@ -1146,6 +1152,19 @@ def hapus_user():
     finally:
         cur.close()
         conn.close()
+=======
+    if not conn: return
+    try:
+        id_user = input("Masukkan ID User yang ingin dihapus: ")
+        cur = conn.cursor()
+        cur.execute("DELETE FROM users WHERE id_users=%s", (id_user,))
+        conn.commit()
+        print(f"✔ User {id_user} berhasil dihapus.")
+    except Exception as e:
+        print("Error hapus user:", e)
+    finally:
+        cur.close(); conn.close()
+>>>>>>> 29e51159092fff404a9615ba503ff3b24abc474e
 
 def lihat_semua_pengajuan():
     conn = get_connection()
