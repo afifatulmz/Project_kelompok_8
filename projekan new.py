@@ -3,6 +3,7 @@ warnings.filterwarnings("ignore", category=UserWarning) #pandasny maunya sama sq
 import psycopg2
 import pandas as pd
 from datetime import datetime
+import re
 
 #Buat connect ke database
 def connectDB():
@@ -19,7 +20,7 @@ def get_connection():
     """Membuat koneksi ke database PostgreSQL"""
     result = connectDB()
     if result:
-        return result[0]  #Return connection aja
+        return result[0]  
     return None
 
 def get_petani_id(username):
@@ -179,8 +180,6 @@ def buat_evaluasi_otomatis(id_pemeriksaan, tinggi, warna, lebar, tekstur, lembab
          id_owner, id_grade, id_hasil)
         )
 
-
-
         conn.commit()
     except Exception as e:
         print("Error simpan evaluasi:", e)
@@ -192,69 +191,81 @@ def buat_evaluasi_otomatis(id_pemeriksaan, tinggi, warna, lebar, tekstur, lembab
 # REGISTRASI & LOGIN
 # ==========================
 def register_manual():
-  while True:
-    username = input("Username: ")
-    if not username.strip():
-        print("username tidak boleh kosong!")
-        continue
-    if not username.isalnum():
-        print("tidak boleh selain huruf dan angka!")
-        continue
-    print(f"username berhasil disimpan ✓: '{username}'")
-    break
-  
-  while True:
-    password = input("Password: ")
-    if not password.strip():
-        print("tidak boleh kosong!")
-        continue
-    print(f"password berhasil disimpan ✓")
-    break
-  
-  print("\nPilih Jenis Pengguna:")
-  print("1. Petani")
-  print("2. Pabrik")
-  pilihan = input("Jenis (1/2): ").strip()
-  role_name = "petani" if pilihan == "1" else "pabrik" if pilihan == "2" else None
+    while True:
+        username = input("Username: ")
+        if not username.strip():
+            print("username tidak boleh kosong!")
+            continue
+        if not username.isalnum():
+            print("username hanya boleh angka dan huruf!")
+            continue
+        break
 
-  if not role_name:
+    while True:
+        password = input("Password: ")
+        if not password.strip():
+            print("password tidak boleh kosong!")
+            continue
+        break
+
+    while True:
+        nama = input("Nama lengkap: ")
+        if not nama.strip():
+            print("nama tidak boleh kosong!")
+        if not re.match(r'^[A-Za-z ]+$', nama):
+            print("Nama hanya boleh huruf dan spasi")
+            continue
+        break
+
+    while True:
+        no_telp = input("No Telepon: ")
+        if not no_telp.strip():
+            print("No telp tidak boleh kosong")
+        if not no_telp.isdigit():
+            print("no telp hanya boleh angka!")
+            continue
+        break
+  
+    email = input("Email: ").strip()
+
+    print("\nPilih Jenis Pengguna:")
+    print("1. Petani")
+    print("2. Pabrik")
+    pilihan = input("Jenis (1/2): ").strip()
+    role_name = "petani" if pilihan == "1" else "pabrik" if pilihan == "2" else None
+    if not role_name:
         print("Pilihan tidak valid!")
         return
 
-  conn = get_connection()
-  if not conn:
+    print("\n--- Input Alamat User ---")
+    id_alamat = pilih_alamat()
+
+    conn = get_connection()
+    if not conn:
         return
 
-  try:
+    try:
         cur = conn.cursor()
-        # cek username
         cur.execute("SELECT id_users FROM users WHERE username = %s", (username,))
         if cur.fetchone():
             print("Username sudah digunakan!")
-            cur.close()
-            conn.close()
             return
 
-        # cari id_role
         cur.execute("SELECT id_role FROM role WHERE nama_role ILIKE %s", (role_name,))
         role_row = cur.fetchone()
         id_role = role_row[0] if role_row else None
 
-        # insert user minimal (sesuai tabel users)
         cur.execute(
-<<<<<<< HEAD
-            "INSERT INTO users (nama, no_kontak, email, username, password, id_role) VALUES (%s,%s,%s,%s,%s,%s)",
-            ('', '', '', username, password, id_role)
-=======
-            "INSERT INTO users (nama, no_kontak, email, username, password, id_alamat, id_role) VALUES (%s,%s,%s,%s,%s,%s,%s)",
-            ('', '', '', username, password, id_alamat, id_role)
->>>>>>> 29e51159092fff404a9615ba503ff3b24abc474e
+            "INSERT INTO users (nama, no_kontak, email, username, password, id_role, id_alamat) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s)",
+            (nama, no_telp, email, username, password, id_role, id_alamat)
         )
         conn.commit()
         print("Registrasi berhasil!")
-  except Exception as e:
-        print(f"Error registrasi: {e}")
-  finally:
+
+    except Exception as e:
+        print("Error registrasi:", e)
+    finally:
         cur.close()
         conn.close()
 
@@ -364,7 +375,7 @@ def input_data_petani(username):
         return
     try:
         cur = conn.cursor()
-        cur.execute("SELECT id_users, nama, no_kontak, email FROM users WHERE username = %s", (username,))
+        cur.execute("SELECT id_users, nama, no_kontak, email, id_alamat FROM users WHERE username = %s", (username,))
         row = cur.fetchone()
         if not row:
             print("User tidak ditemukan.")
@@ -372,12 +383,14 @@ def input_data_petani(username):
         id_user = row[0]
         print("\n--- Update Profil ---")
         while True:
-            nama = input(f"Nama ({row[1] or ''}): ") or row[1]
-            if not nama.isalpha():
-                print("nama tidak boleh selain huruf!")
+            nama = input("Nama lengkap: ")
             if not nama.strip():
                 print("nama tidak boleh kosong!")
+            if not re.match(r'^[A-Za-z ]+$', nama):
+                print("Nama hanya boleh huruf dan spasi")
+                continue
             break
+        
         while True:
             telp = input(f"No Telepon ({row[2] or ''}): ") or row[2]
             if not telp.isdigit():
@@ -390,7 +403,15 @@ def input_data_petani(username):
             if not email.strip():
                 print("email tidak boleh kosong!")
             break
-        cur.execute("UPDATE users SET nama=%s, no_kontak=%s, email=%s WHERE id_users=%s", (nama, telp, email, id_user))
+
+        pilih = input("Apakah ingin mengubah alamat? (y/n): ").lower()
+        if pilih == "y":
+         id_alamat = pilih_alamat()
+        else:
+         id_alamat = row[4]  # id_alamat lama dari SELECT
+
+
+        cur.execute("UPDATE users SET nama=%s, no_kontak=%s, email=%s, id_alamat=%s WHERE id_users=%s", (nama, telp, email, id_alamat, id_user))
         conn.commit()
         print("Profil berhasil diperbarui!")
     except Exception as e:
@@ -884,7 +905,7 @@ def dashboard_petani(username):
         return
     while True:
         print(f"\n{'='*22} MENU PETANI {'='*22}")
-        print("1. Input Data Profil")
+        print("1. Input & edit Data Profil")
         print("2. Input Data Lahan")
         print("3. Input Data Pemeriksaan (Pertumbuhan)")
         print("4. Edit Data Pemeriksaan")
@@ -1036,6 +1057,92 @@ def riwayat_transaksi_pabrik(username):
     finally:
         conn.close()
 
+def edit_data_pabrik(username):
+    """
+    Edit profil user pabrik (nama, no_kontak, email, alamat).
+    Update tabel users + id_alamat.
+    """
+    conn = get_connection()
+    if not conn:
+        return
+
+    try:
+        cur = conn.cursor()
+
+        # Ambil data lama
+        cur.execute("""
+            SELECT id_users, nama, no_kontak, email, id_alamat
+            FROM users
+            WHERE username = %s
+        """, (username,))
+        row = cur.fetchone()
+
+        if not row:
+            print("❌ User pabrik tidak ditemukan.")
+            return
+
+        id_user, old_nama, old_telp, old_email, old_alamat = row
+
+        print("\n--- Edit Profil Pabrik ---")
+
+        # Nama
+        while True:
+            nama = input(f"Nama ({old_nama or ''}): ") or old_nama
+            if not nama.strip():
+                print("nama tidak boleh kosong!")
+                continue
+            if not nama.replace(" ", "").isalpha():
+                print("nama hanya boleh huruf & spasi!")
+                continue
+            break
+
+        # Telepon
+        while True:
+            telp = input(f"No Telepon ({old_telp or ''}): ") or old_telp
+            if not telp.strip():
+                print("no telepon tidak boleh kosong!")
+                continue
+            if not telp.isdigit():
+                print("no telepon hanya boleh angka!")
+                continue
+            break
+
+        # Email
+        while True:
+            email = input(f"Email ({old_email or ''}): ") or old_email
+            if not email.strip():
+                print("email tidak boleh kosong!")
+                continue
+            break
+
+        # Edit alamat (opsional)
+        print("\nEdit Alamat?")
+        print("1. Ya, ganti alamat")
+        print("2. Tidak, pakai alamat lama")
+        pilih_alamat_edit = input("Pilih: ")
+
+        if pilih_alamat_edit == "1":
+            id_alamat = pilih_alamat()  # buat alamat baru
+        else:
+            id_alamat = old_alamat
+
+        # UPDATE ke DB
+        cur.execute("""
+            UPDATE users 
+            SET nama=%s, no_kontak=%s, email=%s, id_alamat=%s
+            WHERE id_users=%s
+        """, (nama, telp, email, id_alamat, id_user))
+
+        conn.commit()
+        print("✔ Profil pabrik berhasil diperbarui!")
+
+    except Exception as e:
+        print("Error edit profil pabrik:", e)
+    finally:
+        try: cur.close()
+        except: pass
+        conn.close()
+
 # ==========================
 # DASHBOARD PABRIK
 # ==========================
@@ -1046,13 +1153,16 @@ def dashboard_pabrik(username):
         print("2. Putuskan Pengajuan")
         print("3. Transaksi Pembelian")
         print("4. Riwayat Transaksi")
-        print("5. Logout")
-        p = input("\nPilih (1-5): ")
+        print("5. Edit Profil")
+        print("6. Logout")
+        p = input("\nPilih (1-6): ")
+
         if p == "1": lihat_pengajuan_pabrik(username)
         elif p == "2": putuskan_pengajuan(username)
         elif p == "3": transaksi_pembelian(username)
         elif p == "4": riwayat_transaksi_pabrik(username)
-        elif p == "5":
+        elif p == "5": edit_data_pabrik(username)
+        elif p == "6":
             print("Logout berhasil dari menu Pabrik.")
             break
         else:
@@ -1096,7 +1206,6 @@ def lihat_semua_user():
 
 def hapus_user():
     conn = get_connection()
-<<<<<<< HEAD
     if not conn:
         return
     
@@ -1152,19 +1261,6 @@ def hapus_user():
     finally:
         cur.close()
         conn.close()
-=======
-    if not conn: return
-    try:
-        id_user = input("Masukkan ID User yang ingin dihapus: ")
-        cur = conn.cursor()
-        cur.execute("DELETE FROM users WHERE id_users=%s", (id_user,))
-        conn.commit()
-        print(f"✔ User {id_user} berhasil dihapus.")
-    except Exception as e:
-        print("Error hapus user:", e)
-    finally:
-        cur.close(); conn.close()
->>>>>>> 29e51159092fff404a9615ba503ff3b24abc474e
 
 def lihat_semua_pengajuan():
     conn = get_connection()
